@@ -7,8 +7,12 @@ export interface ForbesBillionaire {
   imageUrl: string | null
 }
 
-const FORBES_API_URL =
-  'https://www.forbes.com/forbesapi/person/rtb/0/position/true.json'
+// Try RTB (real-time) first, fall back to annual list
+const FORBES_RTB_URL =
+  'https://www.forbes.com/forbesapi/person/rtb/0/position/true.json?fields=rank,personName,squareImage,realTimeWorth,finalWorth,naturalId&limit=20'
+
+const FORBES_ANNUAL_URL =
+  'https://www.forbes.com/forbesapi/person/billionaires/0/position/true.json?fields=rank,personName,squareImage,finalWorth,naturalId&limit=20'
 
 type RawPerson = Record<string, unknown>
 
@@ -31,17 +35,15 @@ function parsePerson(p: RawPerson, i: number): ForbesBillionaire {
   return { rank, name, netWorth, imageUrl }
 }
 
-function buildFetchUrl(): string {
-  const scraperKey = process.env.SCRAPER_API_KEY
-  if (scraperKey) {
-    return `https://api.scraperapi.com?api_key=${scraperKey}&url=${encodeURIComponent(FORBES_API_URL)}`
-  }
-  return FORBES_API_URL
+function proxyUrl(target: string): string {
+  const key = process.env.SCRAPER_API_KEY
+  if (!key) return target
+  // country_code=us ensures a US residential IP (Forbes is US-focused)
+  return `https://api.scraperapi.com?api_key=${key}&country_code=us&url=${encodeURIComponent(target)}`
 }
 
-export async function fetchForbesBillionaires(): Promise<ForbesBillionaire[]> {
-  const url = buildFetchUrl()
-  const usingProxy = url !== FORBES_API_URL
+async function fetchPersons(targetUrl: string): Promise<RawPerson[]> {
+  const url = proxyUrl(targetUrl)
 
   const res = await fetch(url, {
     headers: {
@@ -49,16 +51,16 @@ export async function fetchForbesBillionaires(): Promise<ForbesBillionaire[]> {
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
       Accept: 'application/json, */*',
       'Accept-Language': 'en-US,en;q=0.9',
-      ...(usingProxy ? {} : {
-        Referer: 'https://www.forbes.com/real-time-billionaires/',
-        Origin: 'https://www.forbes.com',
-      }),
+      Referer: 'https://www.forbes.com/real-time-billionaires/',
     },
     next: { revalidate: 0 },
   })
 
   if (!res.ok) {
-    throw new Error(`Forbes API responded with ${res.status} ${res.statusText}`)
+    const body = await res.text().catch(() => '')
+    throw new Error(
+      `Forbes API ${res.status} ${res.statusText}${body ? `: ${body.slice(0, 200)}` : ''}`
+    )
   }
 
   const data = await res.json() as Record<string, unknown>
@@ -67,8 +69,27 @@ export async function fetchForbesBillionaires(): Promise<ForbesBillionaire[]> {
 
   if (!persons.length) {
     throw new Error(
-      `Forbes API returned no persons. Keys in response: ${Object.keys(data).join(', ')}`
+      `Forbes API returned no persons. Top-level keys: ${Object.keys(data).join(', ')}`
     )
+  }
+
+  return persons
+}
+
+export async function fetchForbesBillionaires(): Promise<ForbesBillionaire[]> {
+  let persons: RawPerson[]
+
+  try {
+    persons = await fetchPersons(FORBES_RTB_URL)
+  } catch (rtbErr) {
+    // Real-time list failed — try the annual billionaires list
+    try {
+      persons = await fetchPersons(FORBES_ANNUAL_URL)
+    } catch (annualErr) {
+      throw new Error(
+        `Both Forbes endpoints failed.\nRTB: ${rtbErr}\nAnnual: ${annualErr}`
+      )
+    }
   }
 
   return persons
