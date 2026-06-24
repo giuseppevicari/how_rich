@@ -7,19 +7,8 @@ export interface ForbesBillionaire {
   imageUrl: string | null
 }
 
-// Forbes JSON API powering the real-time billionaires page
 const FORBES_API_URL =
   'https://www.forbes.com/forbesapi/person/rtb/0/position/true.json'
-
-// Browser-like headers — Forbes blocks non-browser User-Agents
-const HEADERS = {
-  'User-Agent':
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-  'Accept': 'application/json, */*',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Referer': 'https://www.forbes.com/real-time-billionaires/',
-  'Origin': 'https://www.forbes.com',
-}
 
 type RawPerson = Record<string, unknown>
 
@@ -42,9 +31,29 @@ function parsePerson(p: RawPerson, i: number): ForbesBillionaire {
   return { rank, name, netWorth, imageUrl }
 }
 
+function buildFetchUrl(): string {
+  const scraperKey = process.env.SCRAPER_API_KEY
+  if (scraperKey) {
+    return `https://api.scraperapi.com?api_key=${scraperKey}&url=${encodeURIComponent(FORBES_API_URL)}`
+  }
+  return FORBES_API_URL
+}
+
 export async function fetchForbesBillionaires(): Promise<ForbesBillionaire[]> {
-  const res = await fetch(FORBES_API_URL, {
-    headers: HEADERS,
+  const url = buildFetchUrl()
+  const usingProxy = url !== FORBES_API_URL
+
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+      Accept: 'application/json, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      ...(usingProxy ? {} : {
+        Referer: 'https://www.forbes.com/real-time-billionaires/',
+        Origin: 'https://www.forbes.com',
+      }),
+    },
     next: { revalidate: 0 },
   })
 
@@ -53,13 +62,13 @@ export async function fetchForbesBillionaires(): Promise<ForbesBillionaire[]> {
   }
 
   const data = await res.json() as Record<string, unknown>
-
-  // The API wraps the list in personList.personsLists
   const personList = data['personList'] as Record<string, unknown> | null
   const persons = (personList?.['personsLists'] ?? []) as RawPerson[]
 
   if (!persons.length) {
-    throw new Error(`Forbes API returned no persons. Keys in response: ${Object.keys(data).join(', ')}`)
+    throw new Error(
+      `Forbes API returned no persons. Keys in response: ${Object.keys(data).join(', ')}`
+    )
   }
 
   return persons
