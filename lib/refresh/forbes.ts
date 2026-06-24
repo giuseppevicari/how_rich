@@ -7,18 +7,23 @@ export interface ForbesBillionaire {
   imageUrl: string | null
 }
 
+// Forbes JSON API powering the real-time billionaires page
 const FORBES_API_URL =
   'https://www.forbes.com/forbesapi/person/rtb/0/position/true.json'
 
-const PERSON_LIST_RE = /"personList"\s*:\s*\{[^}]*"personsLists"\s*:\s*(\[[\s\S]*?\])\s*\}/
-
+// Browser-like headers — Forbes blocks non-browser User-Agents
 const HEADERS = {
   'User-Agent':
-    'Mozilla/5.0 (compatible; HowRich/1.0; +https://howrich.app)',
-  Accept: 'application/json, text/html',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Accept': 'application/json, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Referer': 'https://www.forbes.com/real-time-billionaires/',
+  'Origin': 'https://www.forbes.com',
 }
 
-function parsePerson(p: Record<string, unknown>, i: number): ForbesBillionaire {
+type RawPerson = Record<string, unknown>
+
+function parsePerson(p: RawPerson, i: number): ForbesBillionaire {
   const rank =
     (p['rank'] as number | null) ??
     (p['realTimeRank'] as number | null) ??
@@ -37,47 +42,24 @@ function parsePerson(p: Record<string, unknown>, i: number): ForbesBillionaire {
   return { rank, name, netWorth, imageUrl }
 }
 
-type RawPerson = Record<string, unknown>
-
-async function fetchFromApi(): Promise<RawPerson[]> {
+export async function fetchForbesBillionaires(): Promise<ForbesBillionaire[]> {
   const res = await fetch(FORBES_API_URL, {
     headers: HEADERS,
     next: { revalidate: 0 },
   })
 
-  if (!res.ok) throw new Error(`Forbes API fetch failed: ${res.status}`)
+  if (!res.ok) {
+    throw new Error(`Forbes API responded with ${res.status} ${res.statusText}`)
+  }
 
   const data = await res.json() as Record<string, unknown>
+
+  // The API wraps the list in personList.personsLists
   const personList = data['personList'] as Record<string, unknown> | null
   const persons = (personList?.['personsLists'] ?? []) as RawPerson[]
 
-  if (!persons.length) throw new Error('No persons in Forbes API response')
-  return persons
-}
-
-async function fetchFromHtml(): Promise<RawPerson[]> {
-  const res = await fetch('https://www.forbes.com/real-time-billionaires/', {
-    headers: HEADERS,
-    next: { revalidate: 0 },
-  })
-
-  if (!res.ok) throw new Error(`Forbes HTML fetch failed: ${res.status}`)
-
-  const html = await res.text()
-  const match = html.match(PERSON_LIST_RE)
-  if (!match) throw new Error('Could not locate billionaire data in Forbes page')
-
-  return JSON.parse(match[1]) as RawPerson[]
-}
-
-export async function fetchForbesBillionaires(): Promise<ForbesBillionaire[]> {
-  let persons: RawPerson[]
-
-  try {
-    persons = await fetchFromApi()
-  } catch {
-    // Fall back to HTML scraping if the JSON API is blocked
-    persons = await fetchFromHtml()
+  if (!persons.length) {
+    throw new Error(`Forbes API returned no persons. Keys in response: ${Object.keys(data).join(', ')}`)
   }
 
   return persons
