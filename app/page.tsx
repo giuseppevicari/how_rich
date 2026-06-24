@@ -9,38 +9,51 @@ async function getData() {
   try {
     const supabase = createServiceClient()
 
-    const [billionairesRes, unitsRes] = await Promise.all([
-      supabase.from('billionaires').select('*'),
+    const [latestDateRes, unitsRes] = await Promise.all([
+      supabase
+        .from('wealth_snapshots')
+        .select('date')
+        .order('date', { ascending: false })
+        .limit(1)
+        .single(),
       supabase.from('comparison_units').select('*').eq('active', true).order('category').order('name'),
     ])
 
-    const billionaires = (billionairesRes.data ?? []) as BillionaireWithSnapshot[]
     const units = (unitsRes.data ?? []) as ComparisonUnit[]
+    const latestDate = (latestDateRes.data as { date: string } | null)?.date
 
-    if (billionaires.length > 0) {
-      const { data: snapshotsRaw } = await supabase
-        .from('wealth_snapshots')
-        .select('*')
-        .in('billionaire_id', billionaires.map(b => b.id))
-        .order('date', { ascending: false })
+    if (!latestDate) return { billionaires: [], units }
 
-      const snapshots = (snapshotsRaw ?? []) as WealthSnapshot[]
-      const latestMap = new Map<string, WealthSnapshot>()
-      for (const s of snapshots) {
-        if (!latestMap.has(s.billionaire_id)) latestMap.set(s.billionaire_id, s)
-      }
+    // Only include snapshots from the most recent refresh date — excludes stale seed data
+    const { data: snapshotsRaw } = await supabase
+      .from('wealth_snapshots')
+      .select('*')
+      .eq('date', latestDate)
+      .order('rank', { ascending: true })
+      .limit(10)
 
-      for (const b of billionaires) {
-        b.latestSnapshot = latestMap.get(b.id) ?? null
-      }
-    }
+    const snapshots = (snapshotsRaw ?? []) as WealthSnapshot[]
+    if (!snapshots.length) return { billionaires: [], units }
 
-    return {
-      billionaires: billionaires
-        .filter(b => b.latestSnapshot)
-        .sort((a, b) => a.latestSnapshot!.rank - b.latestSnapshot!.rank),
-      units,
-    }
+    const { data: billionairesRaw } = await supabase
+      .from('billionaires')
+      .select('*')
+      .in('id', snapshots.map(s => s.billionaire_id))
+
+    const billionairesById = new Map(
+      ((billionairesRaw ?? []) as BillionaireWithSnapshot[]).map(b => [b.id, b])
+    )
+
+    const billionaires = snapshots
+      .map(s => {
+        const b = billionairesById.get(s.billionaire_id)
+        if (!b) return null
+        b.latestSnapshot = s
+        return b
+      })
+      .filter((b): b is BillionaireWithSnapshot => b !== null)
+
+    return { billionaires, units }
   } catch {
     return { billionaires: [], units: [] }
   }
