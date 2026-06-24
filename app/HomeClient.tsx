@@ -6,8 +6,6 @@ import { ComparisonUnitGrid } from '@/components/ComparisonUnitGrid'
 import { ModeSelector } from '@/components/ModeSelector'
 import { WhatCanTheyBuy } from '@/components/modes/WhatCanTheyBuy'
 import { HowLongWouldItLast } from '@/components/modes/HowLongWouldItLast'
-import { ComparedToWhat } from '@/components/modes/ComparedToWhat'
-import { ScaleLadder } from '@/components/modes/ScaleLadder'
 import { VisualizationCanvas } from '@/components/visualization/VisualizationCanvas'
 import { ShareCard } from '@/components/ShareCard'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -78,12 +76,6 @@ export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
               )}
               {mode === 'time' && (
                 <HowLongWouldItLast netWorth={netWorth} />
-              )}
-              {mode === 'benchmark' && (
-                <ComparedToWhat netWorth={netWorth} units={selectedUnits} />
-              )}
-              {mode === 'ladder' && (
-                <ScaleLadder netWorth={netWorth} unit={primaryUnit} />
               )}
             </div>
           </ErrorBoundary>
