@@ -46,3 +46,15 @@ create table refresh_logs (
   status       text not null check (status in ('success', 'failure', 'partial')),
   message      text
 );
+
+-- Row Level Security: all tables are public read-only
+-- Writes are done exclusively via the service_role key (bypasses RLS)
+alter table billionaires      enable row level security;
+alter table wealth_snapshots  enable row level security;
+alter table comparison_units  enable row level security;
+alter table refresh_logs      enable row level security;
+
+create policy "Public read" on billionaires     for select using (true);
+create policy "Public read" on wealth_snapshots for select using (true);
+create policy "Public read" on comparison_units for select using (true);
+create policy "Public read" on refresh_logs     for select using (true);
