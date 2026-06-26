@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BillionaireSelector } from '@/components/BillionaireSelector'
 import { ComparisonUnitGrid } from '@/components/ComparisonUnitGrid'
 import { ModeSelector } from '@/components/ModeSelector'
@@ -22,10 +22,23 @@ interface Props {
 
 export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
   const [selectedBillionaire, setSelectedBillionaire] = useState<BillionaireWithSnapshot | null>(
-    preselectedSlug ? (billionaires.find(b => b.slug === preselectedSlug) ?? null) : null
+    preselectedSlug
+      ? (billionaires.find(b => b.slug === preselectedSlug) ?? billionaires[0] ?? null)
+      : (billionaires[0] ?? null)
   )
-  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([])
-  const [mode, setMode] = useState<ComparisonMode>('buy')
+  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>(() => {
+    const bigMac = units.find(u => u.slug === 'big-mac')
+    return bigMac ? [bigMac.id] : []
+  })
+  const [mode, setMode] = useState<ComparisonMode>('time')
+
+  // Auto-select Big Mac when switching to a billionaire with no units chosen
+  useEffect(() => {
+    if (selectedBillionaire && selectedUnitIds.length === 0) {
+      const bigMac = units.find(u => u.slug === 'big-mac')
+      if (bigMac) setSelectedUnitIds([bigMac.id])
+    }
+  }, [selectedBillionaire])
 
   const netWorth = selectedBillionaire?.latestSnapshot?.net_worth ?? 0
   const selectedUnits = units.filter(u => selectedUnitIds.includes(u.id))
@@ -71,11 +84,11 @@ export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
 
           <ErrorBoundary>
             <div className="space-y-6">
-              {mode === 'buy' && (
-                <WhatCanTheyBuy netWorth={netWorth} units={selectedUnits} />
-              )}
               {mode === 'time' && (
                 <HowLongWouldItLast netWorth={netWorth} />
+              )}
+              {mode === 'buy' && (
+                <WhatCanTheyBuy netWorth={netWorth} units={selectedUnits} />
               )}
             </div>
           </ErrorBoundary>

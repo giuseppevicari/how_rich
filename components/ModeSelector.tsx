@@ -8,8 +8,8 @@ interface Props {
 }
 
 const MODES: { id: ComparisonMode; label: string; description: string }[] = [
-  { id: 'buy',  label: 'What Can They Buy?',     description: 'Purchasing power in real goods' },
   { id: 'time', label: 'How Long Would It Last?', description: 'Time to deplete at daily spend rates' },
+  { id: 'buy',  label: 'What Can They Buy?',      description: 'Purchasing power in real goods' },
 ]
 
 export function ModeSelector({ activeMode, onChange }: Props) {
