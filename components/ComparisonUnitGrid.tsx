@@ -6,8 +6,8 @@ import type { ComparisonUnit, ComparisonCategory } from '@/lib/database.types'
 
 interface Props {
   units: ComparisonUnit[]
-  selectedIds: string[]
-  onToggle: (unit: ComparisonUnit) => void
+  selectedId: string | null
+  onSelect: (unit: ComparisonUnit) => void
 }
 
 const CATEGORY_LABELS: Record<ComparisonCategory, string> = {
@@ -16,7 +16,7 @@ const CATEGORY_LABELS: Record<ComparisonCategory, string> = {
   benchmark: 'Benchmarks',
 }
 
-export function ComparisonUnitGrid({ units, selectedIds, onToggle }: Props) {
+export function ComparisonUnitGrid({ units, selectedId, onSelect }: Props) {
   const [activeCategory, setActiveCategory] = useState<ComparisonCategory | 'all'>('all')
 
   const categories = Array.from(new Set(units.map(u => u.category))) as ComparisonCategory[]
@@ -49,11 +49,11 @@ export function ComparisonUnitGrid({ units, selectedIds, onToggle }: Props) {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
         {filtered.map((unit, i) => {
-          const isSelected = selectedIds.includes(unit.id)
+          const isSelected = unit.id === selectedId
           return (
             <motion.button
               key={unit.id}
-              onClick={() => onToggle(unit)}
+              onClick={() => onSelect(unit)}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: i * 0.02 }}

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { ComparisonUnit } from '@/lib/database.types'
-import { getLODConfig, getAggregationFactor } from '@/lib/visualization/lodEngine'
 
 interface Props {
   unit: ComparisonUnit | null
@@ -17,7 +16,7 @@ const UNIT_EMOJI: Record<string, string> = {
   'netflix-subscription':   '🎦',
   'average-us-home':        '🏠',
   'private-jet-gulfstream': '✈️',
-  'superyacht-90m':         '🚥',
+  'superyacht-90m':         '🛥️',
   'boeing-737-max':         '✈️',
   'aircraft-carrier':       '⚓',
   'nasa-budget':            '🚀',
@@ -28,77 +27,136 @@ const UNIT_EMOJI: Record<string, string> = {
   'rockefeller-fortune':    '💰',
 }
 
+const MAX_CELL_PX = 48
+const MAX_CANVAS_H = 1200
+
+interface Layout {
+  cols: number
+  cellPx: number
+  canvasH: number
+  visibleCount: number
+  overflowCount: number
+}
+
+function computeLayout(W: number, quantity: number): Layout {
+  let cols = Math.round(Math.sqrt(quantity))
+  if (cols < 1) cols = 1
+  let cellPx = W / cols
+
+  if (cellPx > MAX_CELL_PX) {
+    cols = Math.ceil(W / MAX_CELL_PX)
+    cellPx = W / cols
+  }
+
+  if (cellPx < 1) {
+    cols = Math.floor(W)
+    cellPx = 1
+  }
+
+  const rows = Math.ceil(quantity / cols)
+  const neededH = rows * cellPx
+  const canvasH = Math.min(neededH, MAX_CANVAS_H)
+
+  const visibleRows = Math.floor(canvasH / cellPx)
+  const visibleCount = Math.min(quantity, visibleRows * cols)
+  const overflowCount = quantity - visibleCount
+
+  return { cols, cellPx, canvasH, visibleCount, overflowCount }
+}
+
 export function VisualizationCanvas({ unit, quantity }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [lodLabel, setLodLabel] = useState<string>('')
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerW, setContainerW] = useState(800)
+  const [overflowCount, setOverflowCount] = useState(0)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    setContainerW(el.offsetWidth || 800)
+    const ro = new ResizeObserver(entries => {
+      setContainerW(entries[0].contentRect.width || 800)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const layout = quantity > 0 && containerW > 0
+    ? computeLayout(containerW, quantity)
+    : null
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || !unit || quantity === 0) return
+    if (!canvas || !unit || !layout || quantity === 0) return
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const config = getLODConfig(quantity)
-    const aggregation = getAggregationFactor(quantity, config)
-    const visibleCount = Math.min(quantity, config.maxVisible)
-    const emoji = UNIT_EMOJI[unit.slug] ?? '●'
-
-    setLodLabel(config.level)
-
     const dpr = window.devicePixelRatio || 1
-    const w = canvas.offsetWidth
-    const h = canvas.offsetHeight
-    canvas.width = w * dpr
-    canvas.height = h * dpr
+    const W = containerW
+    const { cols, cellPx, canvasH, visibleCount } = layout
+
+    canvas.width = Math.round(W * dpr)
+    canvas.height = Math.round(canvasH * dpr)
     ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, W, canvasH)
 
-    ctx.clearRect(0, 0, w, h)
-    ctx.font = `${config.unitSize}px serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
+    setOverflowCount(layout.overflowCount)
 
-    const cols = config.gridColumns
-    const rows = Math.ceil(visibleCount / cols)
-    const cellW = w / cols
-    const cellH = Math.min(h / rows, cellW)
-
-    const offsetY = (h - rows * cellH) / 2
-
-    for (let i = 0; i < visibleCount; i++) {
-      const col = i % cols
-      const row = Math.floor(i / cols)
-      const x = col * cellW + cellW / 2
-      const y = offsetY + row * cellH + cellH / 2
-
-      ctx.globalAlpha = aggregation > 1 ? 0.7 : 1
-      ctx.fillText(emoji, x, y)
-
-      if (aggregation > 1 && config.unitSize >= 12) {
-        ctx.font = `${Math.max(8, config.unitSize * 0.5)}px monospace`
-        ctx.globalAlpha = 0.5
-        ctx.fillStyle = '#f59e0b'
-        ctx.fillText(`×${aggregation.toLocaleString()}`, x, y + config.unitSize * 0.7)
-        ctx.fillStyle = 'white'
-        ctx.font = `${config.unitSize}px serif`
+    if (cellPx >= 14) {
+      // Emoji rendering
+      const fontSize = Math.floor(cellPx * 0.72)
+      const emoji = UNIT_EMOJI[unit.slug] ?? '●'
+      ctx.font = `${fontSize}px serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      for (let i = 0; i < visibleCount; i++) {
+        const col = i % cols
+        const row = Math.floor(i / cols)
+        ctx.fillText(emoji, col * cellPx + cellPx / 2, row * cellPx + cellPx / 2)
       }
+    } else if (cellPx >= 2) {
+      // Amber dot rendering
+      const r = Math.max(0.5, cellPx * 0.38)
+      ctx.fillStyle = '#f59e0b'
+      for (let i = 0; i < visibleCount; i++) {
+        const col = i % cols
+        const row = Math.floor(i / cols)
+        ctx.beginPath()
+        ctx.arc(col * cellPx + cellPx / 2, row * cellPx + cellPx / 2, r, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    } else {
+      // 1-px fill — just flood the entire visible area
+      const visibleRows = Math.floor(canvasH / cellPx)
+      ctx.fillStyle = '#f59e0b'
+      ctx.fillRect(0, 0, cols, visibleRows)
     }
-  }, [unit, quantity])
+
+    // Dim stripe for overflow rows
+    if (layout.overflowCount > 0) {
+      const visibleRows = Math.floor(canvasH / cellPx)
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.18)'
+      ctx.fillRect(0, visibleRows * cellPx, W, canvasH - visibleRows * cellPx)
+    }
+  }, [unit, quantity, layout, containerW])
 
   if (!unit || quantity === 0) return null
 
   return (
     <div className="relative w-full bg-zinc-900/80 rounded-xl border border-zinc-700 overflow-hidden">
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-widest text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded">
-          {lodLabel} view
-        </span>
+      {overflowCount > 0 && (
+        <div className="absolute bottom-2 right-2 z-10 text-xs text-amber-400/80 bg-zinc-900/80 px-2 py-0.5 rounded">
+          +{overflowCount.toLocaleString()} more
+        </div>
+      )}
+      <div ref={containerRef} className="w-full">
+        <canvas
+          ref={canvasRef}
+          className="w-full block"
+          style={{ height: layout ? `${layout.canvasH}px` : '280px' }}
+        />
       </div>
-      <canvas
-        ref={canvasRef}
-        className="w-full"
-        style={{ height: '280px' }}
-      />
     </div>
   )
 }

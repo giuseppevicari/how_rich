@@ -26,34 +26,28 @@ export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
       ? (billionaires.find(b => b.slug === preselectedSlug) ?? billionaires[0] ?? null)
       : (billionaires[0] ?? null)
   )
-  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>(() => {
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(() => {
     const bigMac = units.find(u => u.slug === 'big-mac')
-    return bigMac ? [bigMac.id] : []
+    return bigMac?.id ?? null
   })
   const [mode, setMode] = useState<ComparisonMode>('time')
 
-  // Auto-select Big Mac when switching to a billionaire with no units chosen
   useEffect(() => {
-    if (selectedBillionaire && selectedUnitIds.length === 0) {
+    if (selectedBillionaire && !selectedUnitId) {
       const bigMac = units.find(u => u.slug === 'big-mac')
-      if (bigMac) setSelectedUnitIds([bigMac.id])
+      if (bigMac) setSelectedUnitId(bigMac.id)
     }
   }, [selectedBillionaire])
 
   const netWorth = selectedBillionaire?.latestSnapshot?.net_worth ?? 0
-  const selectedUnits = units.filter(u => selectedUnitIds.includes(u.id))
-  const primaryUnit = selectedUnits[0] ?? null
+  const selectedUnit = units.find(u => u.id === selectedUnitId) ?? null
 
-  const primaryBuyResult = primaryUnit && netWorth > 0
-    ? calculateBuyPower(netWorth, primaryUnit)
+  const primaryBuyResult = selectedUnit && netWorth > 0
+    ? calculateBuyPower(netWorth, selectedUnit)
     : null
 
-  function toggleUnit(unit: ComparisonUnit) {
-    setSelectedUnitIds(prev =>
-      prev.includes(unit.id)
-        ? prev.filter(id => id !== unit.id)
-        : [...prev, unit.id]
-    )
+  function selectUnit(unit: ComparisonUnit) {
+    setSelectedUnitId(prev => prev === unit.id ? null : unit.id)
   }
 
   if (billionaires.length === 0) {
@@ -84,20 +78,20 @@ export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
                   <ErrorBoundary>
                     <ComparisonUnitGrid
                       units={units}
-                      selectedIds={selectedUnitIds}
-                      onToggle={toggleUnit}
+                      selectedId={selectedUnitId}
+                      onSelect={selectUnit}
                     />
                   </ErrorBoundary>
-                  <WhatCanTheyBuy netWorth={netWorth} units={selectedUnits} />
+                  <WhatCanTheyBuy netWorth={netWorth} unit={selectedUnit} />
                 </>
               )}
             </div>
           </ErrorBoundary>
 
-          {mode === 'buy' && primaryUnit && primaryBuyResult && (
+          {mode === 'buy' && selectedUnit && primaryBuyResult && (
             <ErrorBoundary>
               <VisualizationCanvas
-                unit={primaryUnit}
+                unit={selectedUnit}
                 quantity={primaryBuyResult.quantity}
               />
             </ErrorBoundary>
