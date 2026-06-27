@@ -94,7 +94,7 @@ export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
             </div>
           </ErrorBoundary>
 
-          {primaryUnit && primaryBuyResult && (
+          {mode === 'buy' && primaryUnit && primaryBuyResult && (
             <ErrorBoundary>
               <VisualizationCanvas
                 unit={primaryUnit}
@@ -103,7 +103,7 @@ export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
             </ErrorBoundary>
           )}
 
-          {primaryBuyResult && (
+          {mode === 'buy' && primaryBuyResult && (
             <ErrorBoundary>
               <ShareCard
                 billionaire={selectedBillionaire}
