@@ -72,14 +72,6 @@ export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
 
       {selectedBillionaire && (
         <>
-          <ErrorBoundary>
-            <ComparisonUnitGrid
-              units={units}
-              selectedIds={selectedUnitIds}
-              onToggle={toggleUnit}
-            />
-          </ErrorBoundary>
-
           <ModeSelector activeMode={mode} onChange={setMode} />
 
           <ErrorBoundary>
@@ -88,7 +80,16 @@ export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
                 <HowLongWouldItLast netWorth={netWorth} />
               )}
               {mode === 'buy' && (
-                <WhatCanTheyBuy netWorth={netWorth} units={selectedUnits} />
+                <>
+                  <ErrorBoundary>
+                    <ComparisonUnitGrid
+                      units={units}
+                      selectedIds={selectedUnitIds}
+                      onToggle={toggleUnit}
+                    />
+                  </ErrorBoundary>
+                  <WhatCanTheyBuy netWorth={netWorth} units={selectedUnits} />
+                </>
               )}
             </div>
           </ErrorBoundary>
