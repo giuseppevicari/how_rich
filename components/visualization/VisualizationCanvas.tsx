@@ -27,55 +27,62 @@ const UNIT_EMOJI: Record<string, string> = {
   'rockefeller-fortune':    '💰',
 }
 
-const MAX_CELL_PX = 48
-const MAX_CANVAS_H = 1200
+const MAX_CELL_PX = 48  // largest icon size
+const MIN_CELL_PX = 3   // smallest visible dot (1px dot + gaps)
+// if natural grid fits within this height, render every item individually
+const MAX_NATURAL_H = 1200
+// canvas height when switching to representational (1 dot = N items) mode
+const REPR_H = 480
 
 interface Layout {
   cols: number
   cellPx: number
   canvasH: number
-  visibleCount: number
-  overflowCount: number
+  dotsToRender: number
+  itemsPerDot: number
 }
 
 function computeLayout(W: number, quantity: number): Layout {
-  let cols = Math.round(Math.sqrt(quantity))
-  if (cols < 1) cols = 1
+  // Natural near-square grid
+  let cols = Math.max(1, Math.round(Math.sqrt(quantity)))
   let cellPx = W / cols
 
+  // Clamp cell size to [MIN_CELL_PX, MAX_CELL_PX]
   if (cellPx > MAX_CELL_PX) {
     cols = Math.ceil(W / MAX_CELL_PX)
     cellPx = W / cols
-  }
-
-  if (cellPx < 1) {
-    cols = Math.floor(W)
-    cellPx = 1
+  } else if (cellPx < MIN_CELL_PX) {
+    cellPx = MIN_CELL_PX
+    cols = Math.floor(W / cellPx)
+    if (cols < 1) cols = 1
   }
 
   const rows = Math.ceil(quantity / cols)
   const neededH = rows * cellPx
-  const canvasH = Math.min(neededH, MAX_CANVAS_H)
 
-  const visibleRows = Math.floor(canvasH / cellPx)
-  const visibleCount = Math.min(quantity, visibleRows * cols)
-  const overflowCount = quantity - visibleCount
+  if (neededH <= MAX_NATURAL_H) {
+    // Show every item individually
+    return { cols, cellPx, canvasH: neededH, dotsToRender: quantity, itemsPerDot: 1 }
+  }
 
-  return { cols, cellPx, canvasH, visibleCount, overflowCount }
+  // Representational: fill REPR_H with dots, each dot = N items
+  const reprRows = Math.floor(REPR_H / cellPx)
+  const dotsToRender = Math.max(1, reprRows * cols)
+  const itemsPerDot = Math.ceil(quantity / dotsToRender)
+  return { cols, cellPx, canvasH: reprRows * cellPx, dotsToRender, itemsPerDot }
 }
 
 export function VisualizationCanvas({ unit, quantity }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerW, setContainerW] = useState(800)
-  const [overflowCount, setOverflowCount] = useState(0)
 
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    setContainerW(el.offsetWidth || 800)
+    setContainerW(Math.max(el.offsetWidth, 200))
     const ro = new ResizeObserver(entries => {
-      setContainerW(entries[0].contentRect.width || 800)
+      setContainerW(Math.max(Math.round(entries[0].contentRect.width), 200))
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -87,74 +94,63 @@ export function VisualizationCanvas({ unit, quantity }: Props) {
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || !unit || !layout || quantity === 0) return
+    if (!canvas || !unit || !layout || layout.dotsToRender === 0) return
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
+    const { cols, cellPx, canvasH, dotsToRender } = layout
     const dpr = window.devicePixelRatio || 1
     const W = containerW
-    const { cols, cellPx, canvasH, visibleCount } = layout
 
     canvas.width = Math.round(W * dpr)
     canvas.height = Math.round(canvasH * dpr)
     ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, W, canvasH)
 
-    setOverflowCount(layout.overflowCount)
+    const emoji = UNIT_EMOJI[unit.slug] ?? '🔸'
 
     if (cellPx >= 14) {
-      // Emoji rendering
+      // Emoji icons
       const fontSize = Math.floor(cellPx * 0.72)
-      const emoji = UNIT_EMOJI[unit.slug] ?? '●'
       ctx.font = `${fontSize}px serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      for (let i = 0; i < visibleCount; i++) {
+      for (let i = 0; i < dotsToRender; i++) {
         const col = i % cols
         const row = Math.floor(i / cols)
         ctx.fillText(emoji, col * cellPx + cellPx / 2, row * cellPx + cellPx / 2)
       }
-    } else if (cellPx >= 2) {
-      // Amber dot rendering
-      const r = Math.max(0.5, cellPx * 0.38)
+    } else {
+      // Amber dot (circle) — always individual, never flood-fill
+      const r = Math.max(0.8, cellPx * 0.38)
       ctx.fillStyle = '#f59e0b'
-      for (let i = 0; i < visibleCount; i++) {
+      for (let i = 0; i < dotsToRender; i++) {
         const col = i % cols
         const row = Math.floor(i / cols)
         ctx.beginPath()
         ctx.arc(col * cellPx + cellPx / 2, row * cellPx + cellPx / 2, r, 0, Math.PI * 2)
         ctx.fill()
       }
-    } else {
-      // 1-px fill — just flood the entire visible area
-      const visibleRows = Math.floor(canvasH / cellPx)
-      ctx.fillStyle = '#f59e0b'
-      ctx.fillRect(0, 0, cols, visibleRows)
-    }
-
-    // Dim stripe for overflow rows
-    if (layout.overflowCount > 0) {
-      const visibleRows = Math.floor(canvasH / cellPx)
-      ctx.fillStyle = 'rgba(245, 158, 11, 0.18)'
-      ctx.fillRect(0, visibleRows * cellPx, W, canvasH - visibleRows * cellPx)
     }
   }, [unit, quantity, layout, containerW])
 
   if (!unit || quantity === 0) return null
 
+  const itemsPerDot = layout?.itemsPerDot ?? 1
+
   return (
     <div className="relative w-full bg-zinc-900/80 rounded-xl border border-zinc-700 overflow-hidden">
-      {overflowCount > 0 && (
-        <div className="absolute bottom-2 right-2 z-10 text-xs text-amber-400/80 bg-zinc-900/80 px-2 py-0.5 rounded">
-          +{overflowCount.toLocaleString()} more
+      {itemsPerDot > 1 && (
+        <div className="absolute top-2 right-2 z-10 text-xs text-amber-400/80 bg-zinc-900/80 px-2 py-0.5 rounded">
+          1 dot ≈ {itemsPerDot.toLocaleString()} {unit.name.toLowerCase()}
         </div>
       )}
       <div ref={containerRef} className="w-full">
         <canvas
           ref={canvasRef}
           className="w-full block"
-          style={{ height: layout ? `${layout.canvasH}px` : '280px' }}
+          style={{ height: layout ? `${Math.round(layout.canvasH)}px` : '280px' }}
         />
       </div>
     </div>
