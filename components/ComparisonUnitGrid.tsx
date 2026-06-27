@@ -65,7 +65,7 @@ export function ComparisonUnitGrid({ units, selectedId, onSelect }: Props) {
                 }
               `}
             >
-              <p className="text-xs font-medium text-white truncate">{unit.name}</p>
+              <p className="text-xs font-medium text-white leading-snug">{unit.name}</p>
               <p className="text-xs text-zinc-400 font-mono mt-0.5">
                 {formatUSD(unit.value)}
               </p>
