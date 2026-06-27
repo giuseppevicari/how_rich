@@ -1,13 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BillionaireSelector } from '@/components/BillionaireSelector'
 import { ComparisonUnitGrid } from '@/components/ComparisonUnitGrid'
 import { ModeSelector } from '@/components/ModeSelector'
 import { WhatCanTheyBuy } from '@/components/modes/WhatCanTheyBuy'
 import { HowLongWouldItLast } from '@/components/modes/HowLongWouldItLast'
-import { ComparedToWhat } from '@/components/modes/ComparedToWhat'
-import { ScaleLadder } from '@/components/modes/ScaleLadder'
 import { VisualizationCanvas } from '@/components/visualization/VisualizationCanvas'
 import { ShareCard } from '@/components/ShareCard'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -24,25 +22,32 @@ interface Props {
 
 export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
   const [selectedBillionaire, setSelectedBillionaire] = useState<BillionaireWithSnapshot | null>(
-    preselectedSlug ? (billionaires.find(b => b.slug === preselectedSlug) ?? null) : null
+    preselectedSlug
+      ? (billionaires.find(b => b.slug === preselectedSlug) ?? billionaires[0] ?? null)
+      : (billionaires[0] ?? null)
   )
-  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([])
-  const [mode, setMode] = useState<ComparisonMode>('buy')
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(() => {
+    const bigMac = units.find(u => u.slug === 'big-mac')
+    return bigMac?.id ?? null
+  })
+  const [mode, setMode] = useState<ComparisonMode>('time')
+
+  useEffect(() => {
+    if (selectedBillionaire && !selectedUnitId) {
+      const bigMac = units.find(u => u.slug === 'big-mac')
+      if (bigMac) setSelectedUnitId(bigMac.id)
+    }
+  }, [selectedBillionaire])
 
   const netWorth = selectedBillionaire?.latestSnapshot?.net_worth ?? 0
-  const selectedUnits = units.filter(u => selectedUnitIds.includes(u.id))
-  const primaryUnit = selectedUnits[0] ?? null
+  const selectedUnit = units.find(u => u.id === selectedUnitId) ?? null
 
-  const primaryBuyResult = primaryUnit && netWorth > 0
-    ? calculateBuyPower(netWorth, primaryUnit)
+  const primaryBuyResult = selectedUnit && netWorth > 0
+    ? calculateBuyPower(netWorth, selectedUnit)
     : null
 
-  function toggleUnit(unit: ComparisonUnit) {
-    setSelectedUnitIds(prev =>
-      prev.includes(unit.id)
-        ? prev.filter(id => id !== unit.id)
-        : [...prev, unit.id]
-    )
+  function selectUnit(unit: ComparisonUnit) {
+    setSelectedUnitId(prev => prev === unit.id ? null : unit.id)
   }
 
   if (billionaires.length === 0) {
@@ -61,43 +66,38 @@ export function HomeClient({ billionaires, units, preselectedSlug }: Props) {
 
       {selectedBillionaire && (
         <>
-          <ErrorBoundary>
-            <ComparisonUnitGrid
-              units={units}
-              selectedIds={selectedUnitIds}
-              onToggle={toggleUnit}
-            />
-          </ErrorBoundary>
-
           <ModeSelector activeMode={mode} onChange={setMode} />
 
           <ErrorBoundary>
             <div className="space-y-6">
-              {mode === 'buy' && (
-                <WhatCanTheyBuy netWorth={netWorth} units={selectedUnits} />
-              )}
               {mode === 'time' && (
                 <HowLongWouldItLast netWorth={netWorth} />
               )}
-              {mode === 'benchmark' && (
-                <ComparedToWhat netWorth={netWorth} units={selectedUnits} />
-              )}
-              {mode === 'ladder' && (
-                <ScaleLadder netWorth={netWorth} unit={primaryUnit} />
+              {mode === 'buy' && (
+                <>
+                  <ErrorBoundary>
+                    <ComparisonUnitGrid
+                      units={units}
+                      selectedId={selectedUnitId}
+                      onSelect={selectUnit}
+                    />
+                  </ErrorBoundary>
+                  <WhatCanTheyBuy netWorth={netWorth} unit={selectedUnit} />
+                </>
               )}
             </div>
           </ErrorBoundary>
 
-          {primaryUnit && primaryBuyResult && (
+          {mode === 'buy' && selectedUnit && primaryBuyResult && (
             <ErrorBoundary>
               <VisualizationCanvas
-                unit={primaryUnit}
+                unit={selectedUnit}
                 quantity={primaryBuyResult.quantity}
               />
             </ErrorBoundary>
           )}
 
-          {primaryBuyResult && (
+          {mode === 'buy' && primaryBuyResult && (
             <ErrorBoundary>
               <ShareCard
                 billionaire={selectedBillionaire}
