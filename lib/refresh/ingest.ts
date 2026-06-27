@@ -1,11 +1,13 @@
 import { createServiceClient } from '../supabase'
 import { fetchForbesBillionaires } from './forbes'
+import { updateGoldPrice } from './goldPrice'
 import type { ForbesBillionaire } from './forbes'
 
 export interface IngestResult {
   success: boolean
   billionairesProcessed: number
   snapshotsInserted: number
+  goldPriceUpdated: boolean
   error?: string
 }
 
@@ -29,7 +31,7 @@ export async function ingestForbesData(): Promise<IngestResult> {
       .from('refresh_logs')
       .update({ completed_at: new Date().toISOString(), status: 'failure', message })
       .eq('id', log?.id ?? '')
-    return { success: false, billionairesProcessed: 0, snapshotsInserted: 0, error: message }
+    return { success: false, billionairesProcessed: 0, snapshotsInserted: 0, goldPriceUpdated: false, error: message }
   }
 
   let snapshotsInserted = 0
@@ -85,12 +87,21 @@ export async function ingestForbesData(): Promise<IngestResult> {
     if (!snapErr) snapshotsInserted++
   }
 
+  // Update gold price — failure here does not abort the refresh
+  let goldPriceUpdated = false
+  try {
+    await updateGoldPrice()
+    goldPriceUpdated = true
+  } catch {
+    // non-fatal: gold price stays at last known value
+  }
+
   await supabase
     .from('refresh_logs')
     .update({
       completed_at: new Date().toISOString(),
       status: 'success',
-      message: `Processed ${billionaires.length} billionaires, inserted ${snapshotsInserted} snapshots`,
+      message: `Processed ${billionaires.length} billionaires, inserted ${snapshotsInserted} snapshots; gold price ${goldPriceUpdated ? 'updated' : 'unchanged'}`,
     })
     .eq('id', log?.id ?? '')
 
@@ -98,5 +109,6 @@ export async function ingestForbesData(): Promise<IngestResult> {
     success: true,
     billionairesProcessed: billionaires.length,
     snapshotsInserted,
+    goldPriceUpdated,
   }
 }

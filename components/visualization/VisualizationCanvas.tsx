@@ -25,6 +25,7 @@ const UNIT_EMOJI: Record<string, string> = {
   'gdp-new-zealand':        '🇳🇿',
   'harvard-endowment':      '🎓',
   'rockefeller-fortune':    '💰',
+  'tonne-of-gold':          '🥇',
 }
 
 const MAX_CELL_PX = 48  // largest icon size
